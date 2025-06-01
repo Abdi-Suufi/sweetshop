@@ -15,8 +15,8 @@ import {
   writeBatch 
 } from 'firebase/firestore';
 
-// Your web app's Firebase configuration
-const firebaseConfig = process.env.REACT_APP_FIREBASE_CONFIG ? JSON.parse(process.env.REACT_APP_FIREBASE_CONFIG) : {
+// Construct Firebase configuration directly from individual .env variables
+const firebaseConfig = {
   apiKey: process.env.REACT_APP_FIREBASE_API_KEY,
   authDomain: process.env.REACT_APP_FIREBASE_AUTH_DOMAIN,
   projectId: process.env.REACT_APP_FIREBASE_PROJECT_ID,
@@ -31,7 +31,7 @@ const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const auth = getAuth(app);
 
-// App ID (can be used for namespacing Firestore paths if needed)
+// App ID to be used in Firestore paths
 const appId = process.env.REACT_APP_FIREBASE_APP_ID;
 
 export {
@@ -51,5 +51,5 @@ export {
   query,
   serverTimestamp,
   writeBatch,
-  appId
+  appId // Export the appId read from environment variables
 };

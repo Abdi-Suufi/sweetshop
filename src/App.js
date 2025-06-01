@@ -6,12 +6,6 @@ import HomePage from './pages/HomePage';
 import BasketPage from './pages/BasketPage';
 import AdminPage from './pages/AdminPage';
 
-const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-sweets-app-id';
-
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
-
 import {
   db, auth, appId as firebaseAppId, // Use appId from firebase.js
   signInAnonymously, signInWithCustomToken, onAuthStateChanged,
