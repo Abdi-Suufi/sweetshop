@@ -5,28 +5,27 @@ import Spinner from './components/Spinner';
 import HomePage from './pages/HomePage';
 import BasketPage from './pages/BasketPage';
 import AdminPage from './pages/AdminPage';
-
 import {
-  db, auth, appId as firebaseAppId, // Use appId from firebase.js
-  signInAnonymously, signInWithCustomToken, onAuthStateChanged,
-  doc, addDoc, setDoc, updateDoc, deleteDoc,
-  onSnapshot, collection, query, serverTimestamp, writeBatch
-} from './firebase'; // Corrected import path
+  getUserId,
+  getSweets,
+  saveSweets,
+  getOrders,
+  saveOrders,
+  getBasket,
+  saveBasket,
+  generateId
+} from './firebase';
 
 function App() {
   const [currentPage, setCurrentPage] = useState('home');
   const [sweets, setSweets] = useState([]);
   const [basket, setBasket] = useState({ items: [] });
   const [orders, setOrders] = useState([]);
-  
   const [isLoadingSweets, setIsLoadingSweets] = useState(true);
   const [isLoadingBasket, setIsLoadingBasket] = useState(true);
-  const [isLoadingOrders, setIsLoadingOrders] = useState(true); // Separate loading state for orders
-
+  const [isLoadingOrders, setIsLoadingOrders] = useState(true);
   const [userId, setUserId] = useState(null);
-  const [isAuthReady, setIsAuthReady] = useState(false);
   const [notification, setNotification] = useState({ message: null, type: null });
-
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
 
@@ -36,109 +35,61 @@ function App() {
     setTimeout(() => setNotification({ message: null, type: null }), duration);
   }, []);
 
-  // Firebase Auth
+  // Initialize user ID
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      if (user) {
-        setUserId(user.uid);
-      } else {
-        try {
-          if (process.env.REACT_APP_INITIAL_AUTH_TOKEN) {
-            await signInWithCustomToken(auth, process.env.REACT_APP_INITIAL_AUTH_TOKEN);
-          } else {
-            await signInAnonymously(auth);
-          }
-        } catch (error) {
-          console.error("Error during sign-in:", error);
-          showNotification('Authentication failed. Some features might be limited.', 'error');
-        }
-      }
-      setIsAuthReady(true);
-    });
-    return () => unsubscribe();
-  }, [showNotification]);
+    setUserId(getUserId());
+  }, []);
 
-  // Fetch Sweets
+  // Load Sweets
   useEffect(() => {
-    if (!isAuthReady) return;
     setIsLoadingSweets(true);
     try {
-      const sweetsCollectionPath = `/artifacts/${firebaseAppId}/public/data/sweets`;
-      const q = query(collection(db, sweetsCollectionPath));
-      const unsubscribe = onSnapshot(q, (querySnapshot) => {
-        const sweetsData = querySnapshot.docs.map(docSn => ({ id: docSn.id, ...docSn.data() }));
-        setSweets(sweetsData);
-        setIsLoadingSweets(false);
-      }, (error) => {
-        console.error("Error fetching sweets:", error);
-        showNotification('Failed to load sweets. Please try again later.', 'error');
-        setIsLoadingSweets(false);
-      });
-      return () => unsubscribe();
+      const sweetsData = getSweets();
+      setSweets(sweetsData);
+      setIsLoadingSweets(false);
     } catch (error) {
-      console.error("Error setting up sweets listener:", error);
-      showNotification('Failed to connect to the database.', 'error');
+      console.error("Error loading sweets:", error);
+      showNotification('Failed to load sweets.', 'error');
       setIsLoadingSweets(false);
     }
-  }, [isAuthReady, showNotification]);
+  }, [showNotification]);
 
-  // Fetch Basket
+  // Load Basket
   useEffect(() => {
-    if (!isAuthReady || !userId) {
-      setIsLoadingBasket(isAuthReady && !userId ? false : true); // Stop loading if auth ready but no user
-      if(isAuthReady && !userId) setBasket({items: []}); // Clear basket if user logs out
-      return;
-    }
+    if (!userId) return;
     setIsLoadingBasket(true);
-    const basketDocPath = `/artifacts/${firebaseAppId}/users/${userId}/basket/currentBasket`;
-    const unsubscribe = onSnapshot(doc(db, basketDocPath), (docSnap) => {
-      if (docSnap.exists()) {
-        setBasket(docSnap.data());
-      } else {
-        setBasket({ items: [] });
-      }
+    try {
+      const basketData = getBasket();
+      setBasket(basketData);
       setIsLoadingBasket(false);
-    }, (error) => {
-      console.error("Error fetching basket:", error);
+    } catch (error) {
+      console.error("Error loading basket:", error);
       showNotification('Failed to load your basket.', 'error');
       setIsLoadingBasket(false);
-    });
-    return () => unsubscribe();
-  }, [isAuthReady, userId, showNotification]);
+    }
+  }, [userId, showNotification]);
 
-  // Fetch Orders (for Admin) - Fetch only when on admin orders page or admin main page
+  // Load Orders (for Admin)
   useEffect(() => {
-    if (!isAuthReady || !currentPage.startsWith('admin')) {
-        // If not on an admin page, or orders are already loaded, don't necessarily re-fetch unless forced
-        // This prevents fetching orders if the user is just Browse the shop.
-        // Set loading to false if orders were previously loaded and we are navigating away.
-        if (orders.length > 0 && !currentPage.startsWith('admin')) setIsLoadingOrders(false);
-        return;
+    if (currentPage !== 'admin-orders' && currentPage !== 'admin') return;
+    setIsLoadingOrders(true);
+    try {
+      const ordersData = getOrders();
+      setOrders(ordersData.sort((a, b) => new Date(b.orderDate) - new Date(a.orderDate)));
+      setIsLoadingOrders(false);
+    } catch (error) {
+      console.error("Error loading orders:", error);
+      showNotification('Failed to load orders.', 'error');
+      setIsLoadingOrders(false);
     }
-    if (currentPage === 'admin-orders' || currentPage === 'admin') { // Only fetch if on relevant pages
-        setIsLoadingOrders(true);
-        const ordersCollectionPath = `/artifacts/${firebaseAppId}/public/data/orders`;
-        // Consider adding orderBy('orderDate', 'desc') for recent orders first
-        const q = query(collection(db, ordersCollectionPath)); 
-        const unsubscribe = onSnapshot(q, (querySnapshot) => {
-        const ordersData = querySnapshot.docs.map(docSn => ({ id: docSn.id, ...docSn.data() }));
-        setOrders(ordersData.sort((a, b) => (b.orderDate?.toDate() || 0) - (a.orderDate?.toDate() || 0)));
-        setIsLoadingOrders(false);
-        }, (error) => {
-        console.error("Error fetching orders:", error);
-        showNotification('Failed to load orders.', 'error');
-        setIsLoadingOrders(false);
-        });
-        return () => unsubscribe();
-    }
-  }, [isAuthReady, currentPage, showNotification, orders.length]); // orders.length helps re-evaluate if it's empty
+  }, [currentPage, showNotification]);
 
   const navigate = (page) => {
     setCurrentPage(page);
   };
 
   // --- Basket Functions ---
-  const addToBasket = async (sweet) => {
+  const addToBasket = (sweet) => {
     if (!userId) {
       showNotification('Please sign in to add items to your basket.', 'error');
       return;
@@ -147,7 +98,6 @@ function App() {
       showNotification(`${sweet.name} is out of stock.`, 'error');
       return;
     }
-    const basketDocRef = doc(db, `/artifacts/${firebaseAppId}/users/${userId}/basket/currentBasket`);
     try {
       const currentBasket = { ...basket };
       const existingItemIndex = currentBasket.items.findIndex(item => item.sweetId === sweet.id);
@@ -161,8 +111,9 @@ function App() {
       } else {
         currentBasket.items.push({ sweetId: sweet.id, name: sweet.name, price: sweet.price, quantity: 1, imageUrl: sweet.imageUrl });
       }
-      currentBasket.updatedAt = serverTimestamp();
-      await setDoc(basketDocRef, currentBasket, { merge: true });
+      currentBasket.updatedAt = new Date().toISOString();
+      setBasket(currentBasket);
+      saveBasket(currentBasket);
       showNotification(`${sweet.name} added to basket!`, 'success');
     } catch (error) {
       console.error("Error adding to basket:", error);
@@ -170,29 +121,28 @@ function App() {
     }
   };
 
-  const updateBasketQuantity = async (sweetId, newQuantity) => {
+  const updateBasketQuantity = (sweetId, newQuantity) => {
     if (!userId) return;
-    const basketDocRef = doc(db, `/artifacts/${firebaseAppId}/users/${userId}/basket/currentBasket`);
-    
-    const sweetDetails = sweets.find(s => s.id === sweetId);
-    if (!sweetDetails) {
-      showNotification('Sweet details not found for quantity update.', 'error');
-      return;
-    }
-
-    if (newQuantity > sweetDetails.stock) {
-      showNotification(`Only ${sweetDetails.stock} units of ${sweetDetails.name} available.`, 'info');
-      // Optionally, set quantity to max available stock
-      // newQuantity = sweetDetails.stock; 
-      return; // Or proceed with newQuantity = sweetDetails.stock
-    }
-
     try {
+      const sweetDetails = sweets.find(s => s.id === sweetId);
+      if (!sweetDetails) {
+        showNotification('Sweet details not found for quantity update.', 'error');
+        return;
+      }
+
+      if (newQuantity > sweetDetails.stock) {
+        showNotification(`Only ${sweetDetails.stock} units of ${sweetDetails.name} available.`, 'info');
+        return;
+      }
+
       const updatedItems = basket.items.map(item =>
         item.sweetId === sweetId ? { ...item, quantity: Math.max(0, newQuantity) } : item
       ).filter(item => item.quantity > 0);
 
-      await setDoc(basketDocRef, { items: updatedItems, updatedAt: serverTimestamp() }, { merge: true });
+      const updatedBasket = { items: updatedItems, updatedAt: new Date().toISOString() };
+      setBasket(updatedBasket);
+      saveBasket(updatedBasket);
+      
       if (newQuantity > 0) {
         showNotification('Basket updated.', 'success');
       } else {
@@ -204,12 +154,13 @@ function App() {
     }
   };
 
-  const removeFromBasket = async (sweetId) => {
+  const removeFromBasket = (sweetId) => {
     if (!userId) return;
-    const basketDocRef = doc(db, `/artifacts/${firebaseAppId}/users/${userId}/basket/currentBasket`);
     try {
       const updatedItems = basket.items.filter(item => item.sweetId !== sweetId);
-      await setDoc(basketDocRef, { items: updatedItems, updatedAt: serverTimestamp() }, { merge: true });
+      const updatedBasket = { items: updatedItems, updatedAt: new Date().toISOString() };
+      setBasket(updatedBasket);
+      saveBasket(updatedBasket);
       showNotification('Item removed from basket.', 'success');
     } catch (error) {
       console.error("Error removing from basket:", error);
@@ -217,28 +168,31 @@ function App() {
     }
   };
 
-  const placeOrder = async () => {
+  const placeOrder = () => {
     if (!userId || basket.items.length === 0) {
       showNotification('Your basket is empty or you are not signed in.', 'error');
       return;
     }
-    const ordersCollectionRef = collection(db, `/artifacts/${firebaseAppId}/public/data/orders`);
-    const basketDocRef = doc(db, `/artifacts/${firebaseAppId}/users/${userId}/basket/currentBasket`);
-    
-    const totalAmount = basket.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-
     try {
-      const batch = writeBatch(db);
-      batch.set(doc(ordersCollectionRef), {
+      const totalAmount = basket.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+      const newOrder = {
+        id: generateId(),
         userId: userId,
         items: basket.items,
         totalAmount: totalAmount,
         status: 'placed',
-        orderDate: serverTimestamp(),
-        customerDetails: { userId } 
-      });
-      batch.set(basketDocRef, { items: [], updatedAt: serverTimestamp() });
-      await batch.commit();
+        orderDate: new Date().toISOString(),
+        customerDetails: { userId }
+      };
+
+      const updatedOrders = [...orders, newOrder];
+      setOrders(updatedOrders);
+      saveOrders(updatedOrders);
+
+      const emptyBasket = { items: [], updatedAt: new Date().toISOString() };
+      setBasket(emptyBasket);
+      saveBasket(emptyBasket);
+
       showNotification('Order placed successfully!', 'success');
       navigate('home');
     } catch (error) {
@@ -252,52 +206,62 @@ function App() {
     setEditingProduct(product);
     setIsProductModalOpen(true);
   };
+
   const closeProductModal = () => {
     setEditingProduct(null);
     setIsProductModalOpen(false);
   };
 
-  const handleProductSubmit = async (productData) => {
-    const sweetsCollectionRef = collection(db, `/artifacts/${firebaseAppId}/public/data/sweets`);
+  const handleProductSubmit = (productData) => {
     try {
       const dataToSave = {
         ...productData,
+        id: editingProduct ? editingProduct.id : generateId(),
         price: parseFloat(productData.price),
-        stock: parseInt(productData.stock)
+        stock: parseInt(productData.stock),
+        createdAt: editingProduct ? editingProduct.createdAt : new Date().toISOString()
       };
+
+      let updatedSweets;
       if (editingProduct) {
-        const productDocRef = doc(db, `/artifacts/${firebaseAppId}/public/data/sweets`, editingProduct.id);
-        await updateDoc(productDocRef, dataToSave);
-        showNotification('Product updated successfully!', 'success');
+        updatedSweets = sweets.map(sweet => 
+          sweet.id === editingProduct.id ? dataToSave : sweet
+        );
       } else {
-        await addDoc(sweetsCollectionRef, { ...dataToSave, createdAt: serverTimestamp() });
-        showNotification('Product added successfully!', 'success');
+        updatedSweets = [...sweets, dataToSave];
       }
+
+      setSweets(updatedSweets);
+      saveSweets(updatedSweets);
+      showNotification(`Product ${editingProduct ? 'updated' : 'added'} successfully!`, 'success');
       closeProductModal();
     } catch (error) {
       console.error("Error saving product:", error);
-      showNotification('Failed to save product. Check console for details.', 'error');
+      showNotification('Failed to save product.', 'error');
     }
   };
 
-  const deleteProduct = async (productId) => {
-    // Consider a custom confirmation modal instead of window.confirm
+  const deleteProduct = (productId) => {
     if (window.confirm('Are you sure you want to delete this product? This cannot be undone.')) {
-        try {
-            const productDocRef = doc(db, `/artifacts/${firebaseAppId}/public/data/sweets`, productId);
-            await deleteDoc(productDocRef);
-            showNotification('Product deleted successfully!', 'success');
-        } catch (error) {
-            console.error("Error deleting product:", error);
-            showNotification('Failed to delete product.', 'error');
-        }
+      try {
+        const updatedSweets = sweets.filter(sweet => sweet.id !== productId);
+        setSweets(updatedSweets);
+        saveSweets(updatedSweets);
+        showNotification('Product deleted successfully!', 'success');
+      } catch (error) {
+        console.error("Error deleting product:", error);
+        showNotification('Failed to delete product.', 'error');
+      }
     }
   };
-  
-  const updateOrderStatus = async (orderId, newStatus) => {
-    const orderDocRef = doc(db, `/artifacts/${firebaseAppId}/public/data/orders`, orderId);
+
+  const updateOrderStatus = (orderId, newStatus) => {
     try {
-      await updateDoc(orderDocRef, { status: newStatus });
+      const updatedOrders = orders.map(order =>
+        order.id === orderId ? { ...order, status: newStatus } : order
+      );
+      setOrders(updatedOrders);
+      saveOrders(updatedOrders);
       showNotification(`Order status updated to ${newStatus}.`, 'success');
     } catch (error) {
       console.error("Error updating order status:", error);
@@ -308,40 +272,36 @@ function App() {
   const basketItemCount = basket.items.reduce((sum, item) => sum + item.quantity, 0);
 
   const renderPage = () => {
-    if (!isAuthReady) { 
-      return <div className="flex justify-center items-center min-h-[calc(100vh-8rem)]"><Spinner /></div>;
-    }
-
     switch (currentPage) {
       case 'home':
         return <HomePage sweets={sweets} isLoading={isLoadingSweets} onAddToBasket={addToBasket} />;
       case 'basket':
         return <BasketPage 
-                  basket={basket} 
-                  isLoading={isLoadingBasket} 
-                  onUpdateQuantity={updateBasketQuantity} 
-                  onRemoveFromBasket={removeFromBasket} 
-                  onPlaceOrder={placeOrder} 
-                  navigate={navigate}
-                />;
-      case 'admin': // Default to admin-products or handle within AdminPage
+          basket={basket} 
+          isLoading={isLoadingBasket} 
+          onUpdateQuantity={updateBasketQuantity} 
+          onRemoveFromBasket={removeFromBasket} 
+          onPlaceOrder={placeOrder} 
+          navigate={navigate}
+        />;
+      case 'admin':
       case 'admin-products':
       case 'admin-orders':
         return <AdminPage 
-                  sweets={sweets}
-                  orders={orders}
-                  isLoadingSweets={isLoadingSweets}
-                  isLoadingOrders={isLoadingOrders}
-                  openProductModal={openProductModal}
-                  deleteProduct={deleteProduct}
-                  isProductModalOpen={isProductModalOpen}
-                  closeProductModal={closeProductModal}
-                  editingProduct={editingProduct}
-                  handleProductSubmit={handleProductSubmit}
-                  updateOrderStatus={updateOrderStatus}
-                  showNotification={showNotification} // Pass down for ProductForm
-                  setCurrentPage={setCurrentPage} // For AdminPage to manage its state and trigger order fetches
-                />;
+          sweets={sweets}
+          orders={orders}
+          isLoadingSweets={isLoadingSweets}
+          isLoadingOrders={isLoadingOrders}
+          openProductModal={openProductModal}
+          deleteProduct={deleteProduct}
+          isProductModalOpen={isProductModalOpen}
+          closeProductModal={closeProductModal}
+          editingProduct={editingProduct}
+          handleProductSubmit={handleProductSubmit}
+          updateOrderStatus={updateOrderStatus}
+          showNotification={showNotification}
+          setCurrentPage={setCurrentPage}
+        />;
       default:
         return <HomePage sweets={sweets} isLoading={isLoadingSweets} onAddToBasket={addToBasket} />;
     }
@@ -351,12 +311,12 @@ function App() {
     <div className="min-h-screen bg-gray-100 font-sans flex flex-col">
       <Navbar navigate={navigate} currentPage={currentPage} basketItemCount={basketItemCount} />
       <Notification message={notification.message} type={notification.type} onDismiss={() => setNotification({ message: null, type: null })} />
-      <main className="flex-grow"> {/* Make main content area grow */}
+      <main className="flex-grow">
         {renderPage()}
       </main>
       <footer className="bg-gray-800 text-white text-center p-6 mt-auto">
         <p>&copy; {new Date().getFullYear()} Sweet Shop. All rights reserved.</p>
-        {userId && <p className="text-xs text-gray-400 mt-1">User ID: {userId.substring(0,10)}... | App ID: {firebaseAppId}</p>}
+        {userId && <p className="text-xs text-gray-400 mt-1">User ID: {userId.substring(0,10)}...</p>}
       </footer>
     </div>
   );
