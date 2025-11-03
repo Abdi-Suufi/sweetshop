@@ -1,55 +1,60 @@
-import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
-import { 
-  getFirestore, 
-  doc, 
-  getDoc, 
-  addDoc, 
-  setDoc, 
-  updateDoc, 
-  deleteDoc, 
-  onSnapshot, 
-  collection, 
-  query, 
-  serverTimestamp, 
-  writeBatch 
-} from 'firebase/firestore';
-
-// Construct Firebase configuration directly from individual .env variables
-const firebaseConfig = {
-  apiKey: process.env.REACT_APP_FIREBASE_API_KEY,
-  authDomain: process.env.REACT_APP_FIREBASE_AUTH_DOMAIN,
-  projectId: process.env.REACT_APP_FIREBASE_PROJECT_ID,
-  storageBucket: process.env.REACT_APP_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: process.env.REACT_APP_FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.REACT_APP_FIREBASE_APP_ID,
-  measurementId: process.env.REACT_APP_FIREBASE_MEASUREMENT_ID
+// Local storage keys
+const STORAGE_KEYS = {
+  SWEETS: 'sweetshop_sweets',
+  ORDERS: 'sweetshop_orders',
+  BASKET: 'sweetshop_basket',
+  USER_ID: 'sweetshop_user_id'
 };
 
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
-const auth = getAuth(app);
+// Generate a unique ID
+const generateId = () => Date.now().toString(36) + Math.random().toString(36).substr(2);
 
-// App ID to be used in Firestore paths
-const appId = process.env.REACT_APP_FIREBASE_APP_ID;
+// Get current user ID or create a new one
+const getUserId = () => {
+  let userId = localStorage.getItem(STORAGE_KEYS.USER_ID);
+  if (!userId) {
+    userId = generateId();
+    localStorage.setItem(STORAGE_KEYS.USER_ID, userId);
+  }
+  return userId;
+};
 
+// Local storage operations
+const getSweets = () => {
+  const sweets = localStorage.getItem(STORAGE_KEYS.SWEETS);
+  return sweets ? JSON.parse(sweets) : [];
+};
+
+const saveSweets = (sweets) => {
+  localStorage.setItem(STORAGE_KEYS.SWEETS, JSON.stringify(sweets));
+};
+
+const getOrders = () => {
+  const orders = localStorage.getItem(STORAGE_KEYS.ORDERS);
+  return orders ? JSON.parse(orders) : [];
+};
+
+const saveOrders = (orders) => {
+  localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify(orders));
+};
+
+const getBasket = () => {
+  const basket = localStorage.getItem(STORAGE_KEYS.BASKET);
+  return basket ? JSON.parse(basket) : { items: [] };
+};
+
+const saveBasket = (basket) => {
+  localStorage.setItem(STORAGE_KEYS.BASKET, JSON.stringify(basket));
+};
+
+// Export everything needed by the app
 export {
-  db,
-  auth,
-  signInAnonymously,
-  signInWithCustomToken,
-  onAuthStateChanged,
-  doc,
-  getDoc,
-  addDoc,
-  setDoc,
-  updateDoc,
-  deleteDoc,
-  onSnapshot,
-  collection,
-  query,
-  serverTimestamp,
-  writeBatch,
-  appId // Export the appId read from environment variables
+  getUserId,
+  getSweets,
+  saveSweets,
+  getOrders,
+  saveOrders,
+  getBasket,
+  saveBasket,
+  generateId
 };
